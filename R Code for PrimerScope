@@ -1,0 +1,220 @@
+# ==========================================
+# PCR Primer Checker — Fixed positions handling
+# ==========================================
+
+# Required packages
+if(!require(stringr)) install.packages("stringr", dependencies=TRUE)
+if(!require(ggplot2)) install.packages("ggplot2", dependencies=TRUE)
+library(stringr)
+library(ggplot2)
+
+# ----------------------------
+# 0️⃣ Create sample FASTA template
+# ----------------------------
+if(!dir.exists("sample_data")) dir.create("sample_data")
+template_file <- "sample_data/template.fasta"
+fasta_content <- ">Example_Template
+>NC_000011.10:c2161209-2159779 Homo sapiens chromosome 11, GRCh38.p14 Primary Assembly
+AGCCCTCCAGGACAGGCTGCATCAGAAGAGGCCATCAAGCAGGTCTGTTCCAAGGGCCTTTGCGTCAGGT
+GGGCTCAGGATTCCAGGGTGGCTGGACCCCAGGCCCCAGCTCTGCAGCAGGGAGGACGTGGCTGGGCTCG
+TGAAGCATGTGGGGGTGAGCCCAGGGGCCCCAAGGCAGGGCACCTGGCCTTCAGCCTGCCTCAGCCCTGC
+CTGTCTCCCAGATCACTGTCCTTCTGCCATGGCCCTGTGGATGCGCCTCCTGCCCCTGCTGGCGCTGCTG
+GCCCTCTGGGGACCTGACCCAGCCGCAGCCTTTGTGAACCAACACCTGTGCGGCTCACACCTGGTGGAAG
+CTCTCTACCTAGTGTGCGGGGAACGAGGCTTCTTCTACACACCCAAGACCCGCCGGGAGGCAGAGGACCT
+GCAGGGTGAGCCAACTGCCCATTGCTGCCCCTGGCCGCCCCCAGCCACCCCCTGCTCCTGGCGCTCCCAC
+CCAGCATGGGCAGAAGGGGGCAGGAGGCTGCCACCCAGCAGGGGGTCAGGTGCACTTTTTTAAAAAGAAG
+TTCTCTTGGTCACGTCCTAAAAGTGACCAGCTCCCTGTGGCCCAGTCAGAATCTCAGCCTGAGGACGGTG
+TTGGCTTCGGCAGCCCCGAGATACATCAGAGGGTGGGCACGCTCCTCCCTCCACTCGCCCCTCAAACAAA
+TGCCCCGCAGCCCATTTCTCCACCCTCATTTGATGACCGCAGATTCAAGTGTTTTGTTAAGTAAAGTCCT
+GGGTGACCTGGGGTCACAGGGTGCCCCACGCTGCCTGCCTCTGGGCGAACACCCCATCACGCCCGGAGGA
+GGGCGTGGCTGCCTGCCTGAGTGGGCCAGACCCCTGTCGCCAGGCCTCACGGCAGCTCCATAGTCAGGAG
+ATGGGGAAGATGCTGGGGACAGGCCCTGGGGAGAAGTACTGGGATCACCTGTTCAGGCTCCCACTGTGAC
+GCTGCCCCGGGGCGGGGGAAGGAGGTGGGACATGTGGGCGTTGGGGCCTGTAGGTCCACACCCAGTGTGG
+GTGACCCTCCCTCTAACCTGGGTCCAGCCCGGCTGGAGATGGGTGGGAGTGCGACCTAGGGCTGGCGGGC
+AGGCGGGCACTGTGTCTCCCTGACTGTGTCCTCCTGTGTCCCTCTGCCTCGCCGCTGTTCCGGAACCTGC
+TCTGCGCGGCACGTCCTGGCAGTGGGGCAGGTGGAGCTGGGCGGGGGCCCTGGTGCAGGCAGCCTGCAGC
+CCTTGGCCCTGGAGGGGTCCCTGCAGAAGCGTGGCATTGTGGAACAATGCTGTACCAGCATCTGCTCCCT
+CTACCAGCTGGAGAACTACTGCAACTAGACGCAGCCCGCAGGCAGCCCCACACCCGCCGCCTCCTGCACC
+GAGAGAGATGGAATAAAGCCCTTGAACCAGC"
+writeLines(fasta_content, template_file)
+
+# ----------------------------
+# 1️⃣ Helper functions
+# ----------------------------
+calc_tm <- function(primer) {
+  primer <- toupper(primer)
+  len <- nchar(primer)
+  nA <- str_count(primer,"A"); nT <- str_count(primer,"T")
+  nG <- str_count(primer,"G"); nC <- str_count(primer,"C")
+  if(len<14) tm <- (nA+nT)*2 + (nG+nC)*4
+  else tm <- 64.9 + 41*(nG+nC-16.4)/len
+  round(tm,1)
+}
+
+calc_gc <- function(primer) {
+  primer <- toupper(primer)
+  len <- nchar(primer)
+  gc_count <- str_count(primer,"G")+str_count(primer,"C")
+  round((gc_count/len)*100,1)
+}
+
+rev_complement <- function(primer) {
+  paste(rev(strsplit(chartr("ATGC","TACG",toupper(primer)),"")[[1]]),collapse="")
+}
+
+check_binding <- function(primer, template, is_reverse=FALSE) {
+  seq_to_search <- if(is_reverse) rev_complement(primer) else toupper(primer)
+  loc <- str_locate(toupper(template), seq_to_search)
+  if(is.na(loc[1])) return(NA)
+  loc[1]
+}
+
+check_hairpin <- function(primer) {
+  primer <- toupper(primer)
+  rc <- rev_complement(primer)
+  for(i in 4:(nchar(primer)-3)) if(str_detect(rc, substr(primer,1,i))) return(TRUE)
+  FALSE
+}
+
+check_dimer <- function(fwd, rev) {
+  rc <- rev_complement(rev)
+  fwd <- toupper(fwd)
+  for(i in 4:(nchar(fwd)-3)) if(str_detect(rc, substr(fwd,1,i))) return(TRUE)
+  FALSE
+}
+
+# ----------------------------
+# 2️⃣ Read template
+# ----------------------------
+template <- paste(readLines(template_file)[!str_detect(readLines(template_file),"^>")], collapse="")
+
+# ----------------------------
+# 3️⃣ Ask user for primers
+# ----------------------------
+forward_primer <- readline(prompt="Enter forward primer sequence: ")
+reverse_primer <- readline(prompt="Enter reverse primer sequence: ")
+
+if(!dir.exists("results")) dir.create("results")
+report_file <- "results/primer_report.txt"
+
+# ----------------------------
+# 4️⃣ Generate report & return positions safely
+# ----------------------------
+generate_report <- function(fwd, rev, template, output_file) {
+  sink(output_file)
+  cat("===== PCR PRIMER CHECKER REPORT(BY ABDULLAH AFZAL ALVI,UL) =====\n\n")
+  cat("Template Length:", nchar(template),"bp\n\n")
+  
+  # Forward
+  bind_pos_f <- check_binding(fwd, template)
+  cat("--- Forward Primer ---\n")
+  cat("Sequence     :", fwd,"\nLength:", nchar(fwd),"bp\n")
+  gc <- calc_gc(fwd); cat("GC Content   :", gc,"%\n")
+  tm <- calc_tm(fwd); cat("Tm          :", tm,"°C\n")
+  cat("Binding      :", if(!is.na(bind_pos_f)) paste("Found at position",bind_pos_f) else "Not found","\n")
+  cat("Hairpin Risk :", if(check_hairpin(fwd)) "High" else "Low","\n\n")
+  
+  # Reverse
+  bind_pos_r <- check_binding(rev, template, is_reverse=TRUE)
+  cat("--- Reverse Primer ---\n")
+  cat("Sequence     :", rev,"\nLength:", nchar(rev),"bp\n")
+  gc <- calc_gc(rev); cat("GC Content   :", gc,"%\n")
+  tm <- calc_tm(rev); cat("Tm          :", tm,"°C\n")
+  cat("Binding      :", if(!is.na(bind_pos_r)) paste("Found at position",bind_pos_r) else "Not found","\n")
+  cat("Hairpin Risk :", if(check_hairpin(rev)) "High" else "Low","\n\n")
+  
+  # Dimer & Amplicon
+  cat("Primer Dimer Risk :", if(check_dimer(fwd,rev)) "High" else "Low","\n")
+  if(!is.na(bind_pos_f) & !is.na(bind_pos_r)) {
+    amp_size <- bind_pos_r + nchar(rev) - bind_pos_f + 1
+    cat("Expected Amplicon Size :", amp_size,"bp\n")
+  } else cat("Expected Amplicon Size : Cannot determine\n")
+  cat("\n======================================\n")
+  sink()
+  cat("Report saved to", output_file,"\n")
+  
+  # Always return positions object
+  list(fwd_pos=bind_pos_f, rev_pos=bind_pos_r, fwd_len=nchar(fwd), rev_len=nchar(rev), template_len=nchar(template))
+}
+
+positions <- generate_report(forward_primer, reverse_primer, template, report_file)
+
+# ----------------------------
+# 5️⃣ Visualization — only if positions exist
+# ----------------------------
+if(!is.na(positions$fwd_pos) & !is.na(positions$rev_pos)) {
+  df <- data.frame(
+    primer=c("Forward","Reverse"),
+    start=c(positions$fwd_pos, positions$rev_pos),
+    end=c(positions$fwd_pos+positions$fwd_len-1, positions$rev_pos+positions$rev_len-1)
+  )
+  p1 <- ggplot(df) + 
+    geom_segment(aes(x=start,xend=end,y=primer,yend=primer,color=primer),size=5) +
+    geom_text(aes(x=(start+end)/2,y=primer,label=paste0(start,"-",end)), color="white", vjust=-0.5) +
+    xlim(0, positions$template_len+20) +
+    labs(title="Primer Binding Positions", x="Template Position (bp)", y="Primer") +
+    theme_minimal() + theme(legend.position="none")
+  ggsave("results/primer_positions.png", p1, width=10,height=3)
+  plot(p1)
+  cat("Primer positions plot saved to results/primer_positions.png\n")
+}
+
+# ----------------------------
+# 6️⃣ Additional Graphs: Sliding GC heatmap
+# ----------------------------
+window_size <- 10
+gc_values <- sapply(1:(nchar(template)-window_size+1), function(i) {
+  seq_window <- substr(template,i,i+window_size-1)
+  calc_gc(seq_window)
+})
+heatmap_df <- data.frame(start=1:(nchar(template)-window_size+1), GC=gc_values)
+p2 <- ggplot(heatmap_df, aes(x=start,y=1,fill=GC)) + 
+  geom_tile() + scale_fill_gradient(low="lightyellow", high="red") +
+  labs(title="Sliding Window GC Content Heatmap BY ABDULAH AFZAL ALVI", x="Template Position (bp)", y="", fill="GC%") +
+  theme_minimal() + theme(axis.text.y=element_blank(), axis.ticks.y=element_blank())
+ggsave("results/gc_content_heatmap.png", p2, width=12, height=2)
+cat("GC content heatmap saved to results/gc_content_heatmap.png\n")
+
+# ----------------------------
+# 7️⃣ Tm plot for primers
+# ----------------------------
+tm_df <- data.frame(
+  Primer=c("Forward","Reverse"),
+  Position=c(positions$fwd_pos, positions$rev_pos),
+  Tm=c(calc_tm(forward_primer), calc_tm(reverse_primer))
+)
+# Only plot if positions are valid
+tm_df <- tm_df[!is.na(tm_df$Position),]
+if(nrow(tm_df)>0) {
+  p3 <- ggplot(tm_df, aes(x=Position,y=Tm,color=Primer,label=Primer)) +
+    geom_point(size=4) + geom_text(vjust=-1) +
+    labs(title="Primer Melting Temperature By ABDULLAH AFZAL ALVI", x="Template Position (bp)", y="Tm (°C)") +
+    theme_minimal()
+  ggsave("results/primer_tm_plot.png", p3, width=10, height=4)
+  cat("Primer Tm plot saved to results/primer_tm_plot.png\n")
+}
+# ===================================================
+# Combine all PCR plots into a single multi-panel figure
+# ===================================================
+
+# Install patchwork if needed
+if(!require(patchwork)) install.packages("patchwork", dependencies=TRUE)
+library(patchwork)
+
+# Make sure p1, p2, p3 exist (generated earlier)
+# If not, recreate them as minimal versions
+# p1 = Primer positions plot
+# p2 = GC content heatmap
+# p3 = Primer Tm plot
+
+# Combine them vertically
+combined_plot <- p2 / p3 + 
+  plot_annotation(title = "PCR Primer Analysis Summary",
+                  subtitle = "Primer positions, GC content heatmap, and Tm plot",
+                  caption = "Generated by PCR Primer Checker
+                  BY ABDULLAH AFZAL ALVI,UL")
+
+# Save combined plot
+if(!dir.exists("results")) dir.create("results")
+ggsave("results/combined_primer_analysis.png", combined_plot, width=12, height=8)
+cat("Combined multi-panel figure saved to results/combined_primer_analysis.png\n")
