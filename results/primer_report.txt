@@ -1,0 +1,23 @@
+===== PCR PRIMER CHECKER REPORT(BY ABDULLAH AFZAL ALVI,UL) =====
+
+Template Length: 1431 bp
+
+--- Forward Primer ---
+Sequence     : reverse_primer <- readline(prompt="Enter reverse primer sequence: ") 
+Length: 68 bp
+GC Content   : 1.5 %
+Tm          : 55.6 °C
+Binding      : Not found 
+Hairpin Risk : High 
+
+--- Reverse Primer ---
+Sequence     : GGAGCTGGGCGGGGGCCCTGGTGCAG 
+Length: 26 bp
+GC Content   : 80.8 %
+Tm          : 72.2 °C
+Binding      : Not found 
+Hairpin Risk : Low 
+
+Called from: stri_detect_regex(string, pattern, negate = negate, opts_regex = opts(pattern))
+Combined multi-panel figure saved to results/combined_primer_analysis.png
+Combined multi-panel figure saved to results/combined_primer_analysis.png
