@@ -344,5 +344,7 @@ University of Lahore (UL), Pakistan
 ---
 
 <p align="center">
-  <sub>Built with ❤️ for genomics research · PrimerScope © 2025 Abdullah Afzal Alvi</sub>
+  <sub>Built with ❤️ for genomics research 
+        · PrimerScope © 2025 Abdullah Afzal Alvi , Department of Plant Production and Biotechnology 
+        University of Layyah</sub>
 </p>
